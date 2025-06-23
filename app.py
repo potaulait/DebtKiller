@@ -324,35 +324,341 @@ with tab7:
     st.title("📊 Pilotage prévisionnel")
     st.markdown("Planifie, anticipe, pilote… et valide chaque étape !")
 
-    with st.expander("💰 Revenus prévisionnels", expanded=False):
+    # ----------- REVENUS PREVISIONNELS -----------
+    with st.expander("💰 Revenus prévisionnels", expanded=True):
         st.info("Ajoute ici tes revenus attendus sur la période souhaitée.")
+        import numpy as np
+        from dateutil.relativedelta import relativedelta
+        if 'revenus_prev' not in st.session_state:
+            st.session_state['revenus_prev'] = pd.DataFrame(columns=["ID", "Intitulé", "Montant", "Fréquence", "Date début", "Date fin"])
+            st.session_state['revenus_prev_id'] = 1
 
-    with st.expander("📤 Dépenses prévisionnelles", expanded=False):
+        # FORMULAIRE D'AJOUT
+        with st.form("form_ajout_revenu_prev", clear_on_submit=True):
+            intitulé = st.text_input("Intitulé")
+            montant = st.number_input("Montant", min_value=0.0, step=1.0, format="%.2f")
+            freq = st.selectbox("Fréquence", ["Ponctuel", "Hebdomadaire", "Mensuel", "Annuel"])
+            date_deb = st.date_input("Date de début", value=datetime.today())
+            date_fin = st.date_input("Date de fin (optionnel)", value=None)
+            submit = st.form_submit_button("Ajouter")
+        if submit:
+            if intitulé and montant > 0:
+                if freq != "Ponctuel":
+                    date_fin_val = date_fin if date_fin else (date_deb + relativedelta(years=3))
+                else:
+                    date_fin_val = date_deb
+                new_row = {
+                    "ID": st.session_state['revenus_prev_id'],
+                    "Intitulé": intitulé,
+                    "Montant": montant,
+                    "Fréquence": freq,
+                    "Date début": fr_date(date_deb),
+                    "Date fin": fr_date(date_fin_val) if date_fin_val else "",
+                }
+                st.session_state['revenus_prev'] = pd.concat(
+                    [st.session_state['revenus_prev'], pd.DataFrame([new_row])],
+                    ignore_index=True
+                )
+                st.session_state['revenus_prev_id'] += 1
+                save_dataframes(user_prefix)
+                st.success("Ajouté !")
+                st.experimental_rerun()
+
+        # AFFICHAGE DU TABLEAU
+        df_rp = st.session_state['revenus_prev']
+        if not df_rp.empty:
+            st.markdown("### Liste des revenus prévisionnels")
+            for i, row in df_rp.iterrows():
+                colA, colB = st.columns([4, 1])
+                with colA:
+                    st.markdown(f"**{row['Intitulé']}** ({row['Fréquence']}, {row['Date début']} → {row['Date fin']}) – {row['Montant']:,.2f} CHF")
+                with colB:
+                    if st.button("🗑️ Supprimer", key=f"del_rp_{row['ID']}"):
+                        st.session_state['revenus_prev'] = st.session_state['revenus_prev'][st.session_state['revenus_prev']['ID'] != row['ID']].reset_index(drop=True)
+                        save_dataframes(user_prefix)
+                        st.success("Supprimé.")
+                        st.experimental_rerun()
+        else:
+            st.info("Aucun revenu prévisionnel enregistré pour l’instant.")
+    with st.expander("📤 Dépenses prévisionnelles", expanded=True):
         st.info("Liste ici toutes tes dépenses prévues : loyer, factures, charges fixes…")
+        # Initialisation du DataFrame des dépenses prévisionnelles
+        import numpy as np
+        from dateutil.relativedelta import relativedelta
+        if 'depenses_prev' not in st.session_state:
+            st.session_state['depenses_prev'] = pd.DataFrame(columns=["ID", "Intitulé", "Montant", "Fréquence", "Date début", "Date fin", "Validations", "Etat"])
+            st.session_state['depenses_prev_id'] = 1
+
+        # Formulaire d'ajout/modif
+        edit_mode_d = st.session_state.get("edit_depense_id", None)
+        if edit_mode_d is not None:
+            # Edition rapide
+            df_dp = st.session_state['depenses_prev']
+            row = df_dp[df_dp["ID"] == edit_mode_d]
+            if not row.empty:
+                row = row.iloc[0]
+                st.markdown("### ✏️ Modifier la dépense prévisionnelle")
+                with st.form("form_edit_depense_prev"):
+                    intitulé = st.text_input("Intitulé", value=row["Intitulé"], key="edit_intitule_dep")
+                    montant = st.number_input("Montant", value=float(row["Montant"]), min_value=0.0, step=1.0, format="%.2f", key="edit_montant_dep")
+                    freq = st.selectbox("Fréquence", ["Ponctuel", "Hebdomadaire", "Mensuel", "Annuel"], index=["Ponctuel", "Hebdomadaire", "Mensuel", "Annuel"].index(row["Fréquence"]), key="edit_freq_dep")
+                    date_deb = st.date_input("Date de début", value=to_date(row["Date début"]), key="edit_date_deb_dep")
+                    date_fin = st.date_input("Date de fin (optionnel)", value=to_date(row["Date fin"]) if not pd.isna(row["Date fin"]) and row["Date fin"] else None, key="edit_date_fin_dep")
+                    colA, colB = st.columns(2)
+                    submit_modif = colA.form_submit_button("Valider la modification")
+                    annuler = colB.form_submit_button("Annuler")
+                if submit_modif:
+                    idx = df_dp[df_dp["ID"] == edit_mode_d].index
+                    if len(idx) > 0:
+                        idx = idx[0]
+                        st.session_state['depenses_prev'].at[idx, "Intitulé"] = intitulé
+                        st.session_state['depenses_prev'].at[idx, "Montant"] = montant
+                        st.session_state['depenses_prev'].at[idx, "Fréquence"] = freq
+                        st.session_state['depenses_prev'].at[idx, "Date début"] = fr_date(date_deb)
+                        st.session_state['depenses_prev'].at[idx, "Date fin"] = fr_date(date_fin) if date_fin else ""
+                        save_dataframes(user_prefix)
+                        st.session_state["edit_depense_id"] = None
+                        st.success("Dépense prévisionnelle modifiée.")
+                        st.rerun()
+                if annuler:
+                    st.session_state["edit_depense_id"] = None
+                    st.rerun()
+            else:
+                st.session_state["edit_depense_id"] = None
+        else:
+            st.markdown("### ➕ Ajouter une dépense prévisionnelle")
+            with st.form("form_ajout_depense_prev"):
+                intitulé = st.text_input("Intitulé", key="dp_intitule")
+                montant = st.number_input("Montant", min_value=0.0, step=1.0, format="%.2f", key="dp_montant")
+                freq = st.selectbox("Fréquence", ["Ponctuel", "Hebdomadaire", "Mensuel", "Annuel"], key="dp_freq")
+                date_deb = st.date_input("Date de début", value=datetime.today(), key="dp_date_deb")
+                date_fin = st.date_input("Date de fin (optionnel)", value=None, key="dp_date_fin")
+                submit = st.form_submit_button("Ajouter cette dépense")
+            if submit:
+                if intitulé and montant > 0:
+                    # Si date fin non renseignée, 3 ans après date_deb pour récurrents
+                    if freq != "Ponctuel":
+                        date_fin_val = date_fin if date_fin else (date_deb + relativedelta(years=3))
+                    else:
+                        date_fin_val = date_deb
+                    new_row = {
+                        "ID": st.session_state['depenses_prev_id'],
+                        "Intitulé": intitulé,
+                        "Montant": montant,
+                        "Fréquence": freq,
+                        "Date début": fr_date(date_deb),
+                        "Date fin": fr_date(date_fin_val) if date_fin_val else "",
+                        "Validations": {},
+                        "Etat": "prévu"
+                    }
+                    st.session_state['depenses_prev'] = pd.concat(
+                        [st.session_state['depenses_prev'], pd.DataFrame([new_row])],
+                        ignore_index=True
+                    )
+                    st.session_state['depenses_prev_id'] += 1
+                    save_dataframes(user_prefix)
+                    st.success("Dépense prévisionnelle ajoutée !")
+                    st.rerun()
+
+        # --- Génération de la liste des occurrences projetées sur 3 ans glissants ---
+        def generate_occurrences_dep(row, start=None, end=None):
+            freq = row["Fréquence"]
+            date_deb = to_date(row["Date début"])
+            date_fin = to_date(row["Date fin"]) if row["Date fin"] else (date_deb + relativedelta(years=3))
+            if start: date_deb = max(date_deb, start)
+            if end: date_fin = min(date_fin, end)
+            occs = []
+            if freq == "Ponctuel":
+                if date_deb >= (start or date_deb) and date_deb <= (end or date_fin):
+                    occs.append(date_deb)
+            else:
+                d = date_deb
+                while d <= date_fin:
+                    if (not start or d >= start) and (not end or d <= end):
+                        occs.append(d)
+                    if freq == "Mensuel":
+                        d += relativedelta(months=1)
+                    elif freq == "Hebdomadaire":
+                        d += relativedelta(weeks=1)
+                    elif freq == "Annuel":
+                        d += relativedelta(years=1)
+            return occs
+
+        # --- Gestion des validations et corrections ---
+        def get_validation_dep(dep_id, dt):
+            df = st.session_state['depenses_prev']
+            idx = df[df["ID"] == dep_id].index
+            if len(idx) == 0:
+                return None
+            valids = df.at[idx[0], "Validations"]
+            if isinstance(valids, str):
+                import ast
+                try:
+                    valids = ast.literal_eval(valids)
+                except Exception:
+                    valids = {}
+            return valids.get(fr_date(dt), None)
+
+        def set_validation_dep(dep_id, dt, montant_reel):
+            df = st.session_state['depenses_prev']
+            idx = df[df["ID"] == dep_id].index
+            if len(idx) == 0:
+                return
+            valids = df.at[idx[0], "Validations"]
+            if isinstance(valids, str):
+                import ast
+                try:
+                    valids = ast.literal_eval(valids)
+                except Exception:
+                    valids = {}
+            valids[fr_date(dt)] = montant_reel
+            st.session_state['depenses_prev'].at[idx[0], "Validations"] = valids
+            save_dataframes(user_prefix)
+
+        # --- Filtres affichage ---
+        st.markdown("### 📆 Filtrer les dépenses prévisionnelles")
+        today = datetime.today().date()
+        default_start = today.replace(day=1)
+        default_end = default_start + relativedelta(years=3) - relativedelta(days=1)
+        colf1, colf2 = st.columns(2)
+        filtre_mois = colf1.date_input("Début affichage", value=default_start, key="dp_filtre_debut")
+        filtre_fin = colf2.date_input("Fin affichage", value=default_end, key="dp_filtre_fin")
+
+        # --- Affichage de la table des dépenses projetées ---
+        df_dp = st.session_state['depenses_prev']
+        # Pour chaque dépense, on projette les occurrences
+        rows_occ = []
+        for i, row in df_dp.iterrows():
+            occs = generate_occurrences_dep(row, start=filtre_mois, end=filtre_fin)
+            for dt in occs:
+                val = get_validation_dep(row["ID"], dt)
+                if val is not None:
+                    etat = "validé" if abs(float(val) - float(row["Montant"])) < 0.01 else "anomalie"
+                else:
+                    if dt < today:
+                        etat = "en retard"
+                    else:
+                        etat = "prévu"
+                rows_occ.append({
+                    "ID": row["ID"],
+                    "Intitulé": row["Intitulé"],
+                    "Montant prévu": row["Montant"],
+                    "Date prévue": dt,
+                    "Fréquence": row["Fréquence"],
+                    "Validation réelle": val,
+                    "Etat": etat,
+                })
+        df_occ = pd.DataFrame(rows_occ)
+        # Classement par date
+        if not df_occ.empty:
+            df_occ = df_occ.sort_values("Date prévue")
+            color_map = {"validé": "#37d67a", "prévu": "#faab1a", "en retard": "#ff9800", "anomalie": "#e74c3c"}
+            st.markdown("### Liste des dépenses prévisionnelles (3 ans glissants)")
+            for idx, row in df_occ.iterrows():
+                col1, col2, col3, col4, col5, col6 = st.columns([2,2,2,2,2,1])
+                color = color_map.get(row["Etat"], "#faab1a")
+                montant_aff = convertir(row["Montant prévu"], "CHF", devise_affichage)
+                val_aff = f"{convertir(row['Validation réelle'], 'CHF', devise_affichage):,.2f} {devise_affichage}" if row["Validation réelle"] is not None else "—"
+                with col1:
+                    st.markdown(f"<span style='color:{color};font-weight:700'>{row['Intitulé']}</span>", unsafe_allow_html=True)
+                with col2:
+                    st.markdown(f"{fr_date(row['Date prévue'])}")
+                with col3:
+                    st.markdown(f"{montant_aff:,.2f} {devise_affichage}")
+                with col4:
+                    st.markdown(f"{row['Fréquence']}")
+                with col5:
+                    st.markdown(f"Réel : {val_aff}")
+                with col6:
+                    key_corr = f"corriger_dep_{row['ID']}_{fr_date(row['Date prévue'])}"
+                    key_val = f"valider_dep_{row['ID']}_{fr_date(row['Date prévue'])}"
+                    key_rep = f"reporter_dep_{row['ID']}_{fr_date(row['Date prévue'])}"
+                    if row["Etat"] in ["anomalie", "en retard", "prévu"]:
+                        if st.button("Corriger/Valider", key=key_corr):
+                            montant_nouv = st.number_input(
+                                f"Montant payé (prévu {montant_aff:,.2f})", min_value=0.0, value=float(row["Montant prévu"]), key=f"montant_corr_dep_{row['ID']}_{fr_date(row['Date prévue'])}"
+                            )
+                            if st.button("Valider", key=key_val):
+                                set_validation_dep(row["ID"], row["Date prévue"], montant_nouv)
+                                st.success("Validation enregistrée.")
+                                st.rerun()
+                        if row["Etat"] != "validé" and st.button("Reporter", key=key_rep):
+                            df = st.session_state['depenses_prev']
+                            idx_r = df[df["ID"] == row["ID"]].index
+                            if len(idx_r) > 0:
+                                freq = df.at[idx_r[0], "Fréquence"]
+                                date_ = row["Date prévue"]
+                                if freq == "Mensuel":
+                                    next_date = date_ + relativedelta(months=1)
+                                elif freq == "Hebdomadaire":
+                                    next_date = date_ + relativedelta(weeks=1)
+                                elif freq == "Annuel":
+                                    next_date = date_ + relativedelta(years=1)
+                                else:
+                                    next_date = date_ + relativedelta(days=1)
+                                date_fin = df.at[idx_r[0], "Date fin"]
+                                if not date_fin or to_date(date_fin) < next_date:
+                                    st.session_state['depenses_prev'].at[idx_r[0], "Date fin"] = fr_date(next_date)
+                                    save_dataframes(user_prefix)
+                                    st.success("Dépense reportée à la prochaine échéance.")
+                                    st.rerun()
+                    elif row["Etat"] == "validé":
+                        st.markdown("<span style='color:#37d67a'>✅ Validé</span>", unsafe_allow_html=True)
+            # Edition/suppression rapide du modèle de dépense
+            st.markdown("---")
+            st.markdown("#### Modifier ou supprimer une dépense prévisionnelle")
+            for i, row in df_dp.iterrows():
+                colA, colB = st.columns([4,1])
+                with colA:
+                    st.markdown(f"**{row['Intitulé']}** ({row['Fréquence']}, {fr_date(row['Date début'])} → {fr_date(row['Date fin']) if row['Date fin'] else ''})")
+                with colB:
+                    if st.button("✏️", key=f"edit_dp_{row['ID']}"):
+                        st.session_state["edit_depense_id"] = row["ID"]
+                        st.rerun()
+                    if st.button("🗑️", key=f"del_dp_{row['ID']}"):
+                        st.session_state[f"confirm_suppr_dp_{row['ID']}"] = True
+                    if st.session_state.get(f"confirm_suppr_dp_{row['ID']}", False):
+                        st.warning("Supprimer cette dépense prévisionnelle ? Cette action est irréversible.")
+                        colC, colD = st.columns(2)
+                        if colC.button("Oui, supprimer", key=f"confirm_suppr_dp_btn_{row['ID']}"):
+                            st.session_state['depenses_prev'] = st.session_state['depenses_prev'][st.session_state['depenses_prev']["ID"] != row["ID"]].reset_index(drop=True)
+                            save_dataframes(user_prefix)
+                            st.success("Dépense supprimée.")
+                            st.session_state[f"confirm_suppr_dp_{row['ID']}"] = False
+                            st.rerun()
+                        if colD.button("Annuler", key=f"annule_suppr_dp_btn_{row['ID']}"):
+                            st.session_state[f"confirm_suppr_dp_{row['ID']}"] = False
+        else:
+            st.info("Aucune dépense prévisionnelle à afficher pour cette période.")
+
+        # --- Alertes automatiques ---
+        alertes = df_occ[df_occ["Etat"].isin(["en retard", "anomalie"])]
+        if not alertes.empty:
+            st.warning(f"⚠️ {len(alertes)} dépense(s) prévisionnelle(s) nécessitent ton attention : échéance passée non validée ou anomalie sur le montant.")
 
     with st.expander("🏦 Remboursements de dettes", expanded=False):
-        st.info("Prévoyance de chaque mensualité ou remboursement à venir.")
+        st.info("Fonctionnalité à venir")
 
     with st.expander("💳 Paiements crédits", expanded=False):
-        st.info("Prévois le paiement de tes crédits sur chaque période.")
+        st.info("Fonctionnalité à venir")
 
     with st.expander("🎯 Objectifs/Projets à financer", expanded=False):
-        st.info("Prévisions d’épargne pour objectifs, vacances, achats majeurs, etc.")
+        st.info("Fonctionnalité à venir")
 
     with st.expander("📈 Investissements programmés", expanded=False):
-        st.info("Investissements récurrents, DCA, ou apports prévus à venir.")
+        st.info("Fonctionnalité à venir")
 
     with st.expander("🟣 État de l’épargne de précaution", expanded=False):
-        st.info("Estime ton fonds d’urgence, prévois son évolution et sécurise ta trésorerie.")
+        st.info("Fonctionnalité à venir")
 
     with st.expander("⚡ Alertes & rappels à venir", expanded=False):
-        st.info("Configure des alertes automatiques pour chaque événement clé ou anomalie.")
+        st.info("Fonctionnalité à venir")
 
     with st.expander("🧠 Visualisation dynamique", expanded=False):
-        st.info("Bientôt ici : une visualisation de l’évolution de ton solde prévisionnel avec courbes, points-clés (remboursement total, objectif atteint…), et distinction des validations réelles/prévisionnelles.")
+        st.info("Fonctionnalité à venir")
 
     with st.expander("🔎 Historique des prévisions et validations", expanded=False):
-        st.info("Tu pourras revenir sur tous les écarts entre prévu/réalisé, modifier ou valider chaque point, et retrouver la trace de tes progrès.")
+        st.info("Fonctionnalité à venir")
 
 # ============= TRANSACTIONS =============
 with tab1:
