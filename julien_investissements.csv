@@ -1,0 +1,2 @@
+ID,Type,Nom,Montant investi,Valeur actuelle,Intérêts reçus,Date,Historique,Couleur,valeur_actuelle_hist
+1,Bourse,BTC,0.0,325.0,0.0,23/06/2025,"[{'date': '23/06/2025', 'montant': 100.0, 'commentaire': ''}, {'date': '24/06/2025', 'montant': 100.0, 'commentaire': ''}, {'date': '25/06/2025', 'montant': 100.0, 'commentaire': ''}]",#fff500,"[{'date': '26/06/2025', 'valeur': 325.0, 'interets': 0.0}]"
